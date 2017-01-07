@@ -95,11 +95,114 @@ var MidiPiano = MidiPiano || {};
 		{
 			text: '',
 			fontSize: 10,//roughly a meter tall
-			width: 10,//in meters
+			width: 80,//in meters
 			height: 1,//in meters
 			horizontalAlign: 'middle',
 			verticalAlign: 'middle'
 		}
+	}
+
+	function configureMIDI()
+	{
+		//Some MIDI files spread the piano across multiple channels. Let's change the first 4.
+		MIDI.programChange(4, MIDI.GM.byName["acoustic_grand_piano"].number);
+		MIDI.programChange(3, MIDI.GM.byName["acoustic_grand_piano"].number);
+		MIDI.programChange(2, MIDI.GM.byName["acoustic_grand_piano"].number);
+		MIDI.programChange(1, MIDI.GM.byName["acoustic_grand_piano"].number);
+	}
+
+	function setupUser(user)
+	{
+		if (user)
+		{
+			userID = user.displayName + '-' + Math.random().toString(36).substr(2, 9);
+		}
+		else
+		{
+			userID = 'altspaceUser-' + Math.random().toString(36).substr(2, 9);
+		}
+		
+		colorUser = Please.make_color
+		({
+			golden: false,
+			saturation: 1,
+			value: 1
+		})[0];
+		noteColorUserDown = new THREE.Color(colorUser);
+	}
+
+	function setupScale(enclosure) 
+	{
+		//Notice: The piano was built using the Medium SDK Room. The scale is based on that room's enclosure PPM.
+		if (enclosure.innerDepth == 1)
+		{
+			scale = (enclosure.pixelsPerMeter / 285.714294) * 3;	
+		}
+		else
+		{
+			scale = (enclosure.pixelsPerMeter / 285.714294) * 3;
+		}
+		
+		whiteDistance = (whiteDistance * scale) / 3;
+		blackDistance = (blackDistance * scale) / 3;
+		xPos = (xPos * scale) / 3;
+		yPos = (79 * scale);
+		zPos = (zPos * scale)  / 3;
+		blackPosOffset = 1.5 * scale;
+	}
+	
+	function setupApp() 
+	{
+		configureMIDI();
+
+		if (altspace.inClient) 
+		{
+			var promises = [alt.getUser(), alt.getSpace(), alt.getEnclosure()];
+			Promise.all(promises).then(function(values) 
+			{
+				var user = values.shift();
+				setupUser(user);
+				
+				var space = values.shift();
+				spaceSID = space.sid;
+				spaceName = space.name;
+						
+				var enclosure = values.shift();
+				setupScale(enclosure);
+						
+				console.log("Connecting to Firebase....");
+				//Connect to Firebase
+				var config = { appId: "Midi Piano", instanceId: spaceSID, authorId: "NorybiaK", baseRefUrl: "midi-piano.firebaseio.com"};
+				alt.utilities.sync.connect(config).then(function (connection) 
+				{
+					altspace.getThreeJSTrackingSkeleton().then(function(trackingSkeleton) 
+					{
+						skeleton = trackingSkeleton;
+						scene.add(skeleton);
+
+						console.log("Connected to Firebase!");
+						instanceData = connection.instance.child('data');
+						instanceUsers = connection.instance.child('users');
+						
+						instanceData.child('name').set(spaceName);
+						
+						console.log("Initalizing Piano....");
+						initalizePiano();
+					});
+				});
+			});
+		}
+	}
+
+	function loadMidi() 
+	{
+		MIDI.loadPlugin
+		({
+			soundfontUrl: "assets/soundfont/",
+			targetFormat: "ogg",
+			instruments: "acoustic_grand_piano",
+			onsuccess: setupApp
+		});
 	}
 
 	//Start the connection to Firebase and fire the main initialization. 
@@ -114,90 +217,7 @@ var MidiPiano = MidiPiano || {};
 			console.log("MidiPiano must be passed a scene! Exiting...");
 			return;	
 		}
-
-		MIDI.loadPlugin
-		({
-			soundfontUrl: "assets/soundfont/",
-			targetFormat: "ogg",
-			instruments: "acoustic_grand_piano",
-			onsuccess: function() 
-			{
-				//Some MIDI files spread the piano across multiple channels. Let's change the first 4.
-				MIDI.programChange(4, MIDI.GM.byName["acoustic_grand_piano"].number);
-				MIDI.programChange(3, MIDI.GM.byName["acoustic_grand_piano"].number);
-				MIDI.programChange(2, MIDI.GM.byName["acoustic_grand_piano"].number);
-				MIDI.programChange(1, MIDI.GM.byName["acoustic_grand_piano"].number);
-
-				if (altspace.inClient) 
-				{
-					var promises = [alt.getUser(), alt.getSpace(), alt.getEnclosure()];
-					Promise.all(promises).then(function(values) 
-					{
-						var user = values.shift();
-						if (user)
-						{
-							userID = user.displayName + '-' + Math.random().toString(36).substr(2, 9);
-						}
-						else
-						{
-							userID = 'altspaceUser-' + Math.random().toString(36).substr(2, 9);
-						}
-						
-						colorUser = Please.make_color
-						({
-							golden: false,
-							saturation: 1,
-							value: 1
-						})[0];
-						noteColorUserDown = new THREE.Color(colorUser);
-						
-						var space = values.shift();
-						spaceSID = space.sid;
-						spaceName = space.name;
-								
-						var enclosure = values.shift();
-						
-						//Notice: The piano was built using the Medium SDK Room. The scale is based on that room's enclosure PPM.
-						if (enclosure.innerDepth == 1)
-						{
-							scale = (enclosure.pixelsPerMeter / 285.714294) * 3;	
-						}
-						else
-						{
-							scale = (enclosure.pixelsPerMeter / 285.714294) * 3;
-						}
-						
-						whiteDistance = (whiteDistance * scale) / 3;
-						blackDistance = (blackDistance * scale) / 3;
-						xPos = (xPos * scale) / 3;
-						yPos = (79 * scale);
-						zPos = (zPos * scale)  / 3;
-						blackPosOffset = 1.5 * scale;
-								
-						console.log("Connecting to Firebase....");
-						//Connect to Firebase
-						var config = { appId: "Midi Piano", instanceId: spaceSID, authorId: "NorybiaK", baseRefUrl: "midi-piano.firebaseio.com"};
-						alt.utilities.sync.connect(config).then(function (connection) 
-						{
-							altspace.getThreeJSTrackingSkeleton().then(function(trackingSkeleton) 
-							{
-								skeleton = trackingSkeleton;
-								scene.add(skeleton);
-
-								console.log("Connected to Firebase!");
-								instanceData = connection.instance.child('data');
-								instanceUsers = connection.instance.child('users');
-								
-								instanceData.child('name').set(spaceName);
-								
-								console.log("Initalizing Piano....");
-								initalizePiano();
-							});
-						});
-					});
-				}
-			}
-		});
+		loadMidi();
 	}
 	
 	function initalizePiano()
@@ -285,11 +305,11 @@ var MidiPiano = MidiPiano || {};
 			scene.add(pianoGroup);
 			
 			//text,y, z, rot, size (default 14)
-			var infoText1 = createText("Play me!", 0, 125, 67, 0, 50);
+			var infoText1 = createText("Play me!", 0, 125, 67, -18, 50);
 			piano.add(infoText1);
-			var infoText2 = createText("MIDI Keyboard?", 0, 118, 69, 0, 50);
+			var infoText2 = createText("MIDI Keyboard?", 0, 118, 69, -18, 50);
 			piano.add(infoText2);
-			var infoText3 = createText("Visit - norybiak.com/apps/piano -", 0, 114, 70, 0, 50);
+			var infoText3 = createText("Visit - norybiak.com/apps/piano -", 0, 114, 70, -18, 50);
 			piano.add(infoText3);
 					
 			//Sides that contain the keys on piano model
@@ -318,7 +338,7 @@ var MidiPiano = MidiPiano || {};
 			//Let's create the text!
 			for (i = 0; i < songs.length; i++) 
 			{
-				songs[i].text = createText(songs[i].title, 0, 100, 80.5, 0, 3);
+				songs[i].text = createText(songs[i].title, 0, 100, 80.5, 0, 50);
 				piano.add(songs[i].text);
 				songs[i].text.visible = false;
 			}
@@ -573,7 +593,7 @@ var MidiPiano = MidiPiano || {};
 		var data = { text: str, fontSize: size };
 		var textMesh = addNativeText(data);
 		textMesh.position.set(x, y, z+1);
-		textMesh.rotateY(rot * Math.PI / 180);
+		textMesh.rotateX(rot * Math.PI / 180);
 		
 		return textMesh;
 	}
